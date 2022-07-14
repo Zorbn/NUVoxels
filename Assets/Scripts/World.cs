@@ -1,9 +1,9 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
-using Debug = UnityEngine.Debug;
 
 public class World : MonoBehaviour
 {
@@ -13,9 +13,6 @@ public class World : MonoBehaviour
     
     // TODO List:
     // Consider splitting chunk renderer into chunk renderer and chunk data classes
-    // Consider how to path-find on this type of terrain, maybe:
-    // Greedy Best First Search: https://www.redblobgames.com/pathfinding/a-star/introduction.html?
-    // Actually make a game with this! (Spelunky like levels in 3d with buildings and gameplay more like streets of rogue)
     
     [SerializeField] private GameObject chunkPrefab;
     
@@ -26,7 +23,8 @@ public class World : MonoBehaviour
     private Material atlasMaterial;
     private Texture2DArray texArray;
 
-    private Dictionary<Vector3Int, ChunkRenderer> ChunkRenderers { get; } = new();
+    private readonly Dictionary<Vector3Int, ChunkRenderer> chunkRenderers = new();
+    private readonly ConcurrentQueue<ChunkRenderer> chunkRenderersToUpdate = new();
 
     private void Start()
     {
@@ -37,6 +35,35 @@ public class World : MonoBehaviour
             wrapMode = TextureWrapMode.Clamp
         };
 
+        FillTextureArray();
+
+        atlasMaterial = new Material(Shader.Find("Custom/StandardTextureArray"));
+        atlasMaterial.SetTexture(MainTex, texArray);
+        atlasMaterial.SetFloat(Glossiness, 0);
+
+        InitializeChunks();
+        GenerateTerrain();
+
+        Thread meshGenThread = new(MeshGenThreadProc);
+        meshGenThread.Start();
+    }
+
+    private void GenerateTerrain()
+    {
+        Parallel.ForEach(chunkRenderers, pair => { pair.Value.GenerateData(); });
+    }
+
+    private void InitializeChunks()
+    {
+        for (int i = 0; i < MapWidthInChunks * MapWidthInChunks * MapHeightInChunks; i++)
+        {
+            (int x, int y, int z) = i.To3D(MapWidthInChunks, MapHeightInChunks);
+            InstantiateChunk(new Vector3Int(x, y, z));
+        }
+    }
+
+    private void FillTextureArray()
+    {
         for (int bi = 0; bi < Block.BlockCount; bi++)
         {
             Block.Id blockId = (Block.Id)bi;
@@ -50,94 +77,82 @@ public class World : MonoBehaviour
 
                 if (texture2D == null)
                     throw new FileLoadException($"Failed to load texture from 'Blocks/{blockName}/{sideName}'");
-                
+
                 texArray.SetPixels(texture2D.GetPixels(), Block.GetTextureId(blockId, sideId));
             }
         }
 
         texArray.Apply();
-        
-        atlasMaterial = new Material(Shader.Find("Custom/StandardTextureArray"));
-        atlasMaterial.SetTexture(MainTex, texArray);
-        atlasMaterial.SetFloat(Glossiness, 0);
+    }
 
-        for (int x = 0; x < MapWidthInChunks; x++)
+    private void Update()
+    {
+        while (chunkRenderersToUpdate.TryDequeue(out ChunkRenderer queuedRenderer)) queuedRenderer.UpdateMesh();
+    }
+
+    private void MeshGenThreadProc()
+    {
+        while (true)
         {
-            for (int z = 0; z < MapWidthInChunks; z++)
+            foreach (KeyValuePair<Vector3Int, ChunkRenderer> pair in chunkRenderers)
             {
-                for (int y = 0; y < MapHeightInChunks; y++)
-                {
-                    InstantiateChunk(new Vector3Int(x, y, z));
-                }
+                if (!pair.Value.IsDirty) continue;
+                
+                pair.Value.GenerateMeshData();
+                chunkRenderersToUpdate.Enqueue(pair.Value);
             }
         }
-
-        Stopwatch watch = new();
-        watch.Start();
-        
-        ParallelGenerateChunks();
-        
-        watch.Stop();
-        Debug.Log($"Generation time: {watch.ElapsedMilliseconds}");
     }
 
-    private void ParallelGenerateChunks()
-    {
-        Parallel.ForEach(ChunkRenderers, pair =>
-        {
-            pair.Value.GenerateData();
-        });
-        
-        Parallel.ForEach(ChunkRenderers, pair =>
-        {
-            pair.Value.GenerateMeshData();
-        });
-        
-        foreach (KeyValuePair<Vector3Int,ChunkRenderer> chunkRenderer in ChunkRenderers)
-        {
-            chunkRenderer.Value.UpdateMesh();
-        }
-    }
-
+    public Block.Id GetBlock(Vector3Int pos) => GetBlock(pos.x, pos.y, pos.z);
+    
     public Block.Id GetBlock(int x, int y, int z)
     {
-        int chunkX = x / ChunkRenderer.Size,
-            chunkY = y / ChunkRenderer.Size,
-            chunkZ = z / ChunkRenderer.Size;
+        Vector3Int chunkPos = GetChunkPos(x, y, z);
+        if (!chunkRenderers.ContainsKey(chunkPos)) return Block.Id.Air;
 
-        Vector3Int chunkPos = new(chunkX, chunkY, chunkZ);
-
-        if (!ChunkRenderers.ContainsKey(chunkPos)) return Block.Id.Air;
-
-        int localX = x % ChunkRenderer.Size,
-            localY = y % ChunkRenderer.Size,
-            localZ = z % ChunkRenderer.Size;
-        
-        return ChunkRenderers[chunkPos].GetBlock(localX, localY, localZ);
+        Vector3Int localPos = GetLocalPos(x, y, z);
+        return chunkRenderers[chunkPos].GetBlock(localPos);
     }
+
+    public void SetBlock(Block.Id blockId, Vector3Int pos) => SetBlock(blockId, pos.x, pos.y, pos.z);
     
-    // TODO: Consolidate duplicate code between GetBlock and SetBlock.
-    // TODO: Consider adding Vector3Int versions of functions like these.
     public void SetBlock(Block.Id blockId, int x, int y, int z)
     {
-        int chunkX = x / ChunkRenderer.Size,
-            chunkY = y / ChunkRenderer.Size,
-            chunkZ = z / ChunkRenderer.Size;
+        Vector3Int chunkPos = GetChunkPos(x, y, z);
+        if (!chunkRenderers.ContainsKey(chunkPos)) return;
 
-        Vector3Int chunkPos = new(chunkX, chunkY, chunkZ);
-
-        if (!ChunkRenderers.ContainsKey(chunkPos)) return;
-
-        int localX = x % ChunkRenderer.Size,
-            localY = y % ChunkRenderer.Size,
-            localZ = z % ChunkRenderer.Size;
-
-        ChunkRenderer chunkRenderer = ChunkRenderers[chunkPos];
-        chunkRenderer.SetBlock(blockId, localX, localY, localZ);
+        Vector3Int localPos = GetLocalPos(x, y, z);
+        ChunkRenderer chunkRenderer = chunkRenderers[chunkPos];
+        chunkRenderer.SetBlock(blockId, localPos);
         
-        // TODO: Add this to a queue and do it off-thread.
-        chunkRenderer.GenerateMeshData();
-        chunkRenderer.UpdateMesh();
+        if (localPos.x == 0)                      MarkDirty(chunkPos + Vector3Int.left);
+        if (localPos.x == ChunkRenderer.Size - 1) MarkDirty(chunkPos + Vector3Int.right);
+        if (localPos.y == 0)                      MarkDirty(chunkPos + Vector3Int.down);
+        if (localPos.y == ChunkRenderer.Size - 1) MarkDirty(chunkPos + Vector3Int.up);
+        if (localPos.z == 0)                      MarkDirty(chunkPos + Vector3Int.back);
+        if (localPos.z == ChunkRenderer.Size - 1) MarkDirty(chunkPos + Vector3Int.forward);
+    }
+
+    // Get the position of the chunk containing this block.
+    private static Vector3Int GetChunkPos(int x, int y, int z) => new()
+    {
+        x = x / ChunkRenderer.Size,
+        y = y / ChunkRenderer.Size,
+        z = z / ChunkRenderer.Size
+    };
+    
+    // Get the location of this block inside the chunk containing it.
+    private static Vector3Int GetLocalPos(int x, int y, int z) => new()
+    {
+        x = x % ChunkRenderer.Size,
+        y = y % ChunkRenderer.Size,
+        z = z % ChunkRenderer.Size
+    };
+
+    private void MarkDirty(Vector3Int chunkPos)
+    {
+        if (chunkRenderers.ContainsKey(chunkPos)) chunkRenderers[chunkPos].MarkDirty();
     }
     
     private void InstantiateChunk(Vector3Int position)
@@ -152,6 +167,6 @@ public class World : MonoBehaviour
         chunkRenderer.world = this;
         chunkRenderer.chunkPosition = position;
         
-        ChunkRenderers.Add(position, chunkRenderer);
+        chunkRenderers.Add(position, chunkRenderer);
     }
 }

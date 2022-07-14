@@ -32,39 +32,26 @@ public static class VoxelRay
         
         while (true)
         {
-            Block.Id blockId = world.GetBlock(blockPos.x, blockPos.y, blockPos.z);
-            if (blockId != Block.Id.Air)
-            {
-                return (blockId, blockPos, hitNormal);
-            }
-            
-            if (tMax.x < tMax.y && tMax.x < tMax.z)
-            {
-                if (tMax.x > distance) break;
+            Block.Id blockId = world.GetBlock(blockPos);
+            if (blockId != Block.Id.Air) return (blockId, blockPos, hitNormal);
 
-                blockPos.x += step.x;
-                tMax.x += tDelta.x;
-                hitNormal = new Vector3Int(-step.x, 0, 0);
-            }
-            else if (tMax.y < tMax.z)
-            {
-                if (tMax.y > distance) break;
+            int i = GetSmallestComponent(tMax); // Move towards the next closest block.
 
-                blockPos.y += step.y;
-                tMax.y += tDelta.y;
-                hitNormal = new Vector3Int(0, -step.y, 0);
-            }
-            else
-            {
-                if (tMax.z > distance) break;
+            if (tMax[i] > distance) break;
 
-                blockPos.z += step.z;
-                tMax.z += tDelta.z;
-                hitNormal = new Vector3Int(0, 0, -step.z);
-            }
+            blockPos[i] += step[i];
+            tMax[i] += tDelta[i];
+            hitNormal = Vector3Int.zero;
+            hitNormal[i] = -step[i];
         }
 
         return (Block.Id.Air, blockPos, Vector3Int.zero);
+    }
+
+    private static int GetSmallestComponent(Vector3 vec)
+    {
+        if (vec.x < vec.y && vec.x < vec.z) return 0;
+        return vec.y < vec.z ? 1 : 2;
     }
     
     // Find smallest multiple of direction that will make start reach the next block location.

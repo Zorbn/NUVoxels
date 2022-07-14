@@ -4,11 +4,13 @@ using UnityEngine;
 public class ChunkRenderer : MonoBehaviour
 {
     public const int Size = 32;
-    
+
+    public bool IsDirty { get; private set; }
+
     public MeshFilter meshFilter;
     public MeshRenderer meshRenderer;
     public MeshCollider meshCollider;
-
+    
     public World world;
     public Vector3Int chunkPosition;
     public Material material;
@@ -21,6 +23,7 @@ public class ChunkRenderer : MonoBehaviour
     private int indexOffset;
     private Mesh mesh;
 
+    // TODO: Make this function take an Action that handles the actual terrain gen?
     public void GenerateData()
     {
         Vector3Int chunkWorldPos = chunkPosition * Size;
@@ -54,13 +57,13 @@ public class ChunkRenderer : MonoBehaviour
 
         for (int i = 0; i < Size * Size * Size; i++)
         {
-            (int x, int y, int z) = GetBlockArrayCoords(i);
+            (int x, int y, int z) = i.To3D(Size);
 
             Block.Id id = GetBlock(x, y, z);
-            if (id == Block.Id.Air) continue;
-            
-            GenCube(id, x, y, z);
+            if (id != Block.Id.Air) GenCube(id, x, y, z);
         }
+
+        IsDirty = false;
     }
     
     public void UpdateMesh()
@@ -89,60 +92,37 @@ public class ChunkRenderer : MonoBehaviour
 
     private void GenCube(Block.Id blockId, int x, int y, int z)
     {
-        GenFaceIfNecessary(blockId, x, y, z, Direction.Axis.XPos);
-        GenFaceIfNecessary(blockId, x, y, z, Direction.Axis.XNeg);
-        GenFaceIfNecessary(blockId, x, y, z, Direction.Axis.YPos);
-        GenFaceIfNecessary(blockId, x, y, z, Direction.Axis.YNeg);
-        GenFaceIfNecessary(blockId, x, y, z, Direction.Axis.ZPos);
-        GenFaceIfNecessary(blockId, x, y, z, Direction.Axis.ZNeg);
+        for (int i = 0; i < 6; i++) GenFaceIfNecessary(blockId, x, y, z, (Direction.Axis)i);
     }
 
-    public Block.Id GetBlock(int x, int y, int z)
-    {
-        if (!IsBlockInBounds(x, y, z)) return Block.Id.Air;
-
-        return blocks[GetBlockArrayIndex(x, y, z)];
-    }
+    public Block.Id GetBlock(Vector3Int pos) => GetBlock(pos.x, pos.y, pos.z);
+    
+    public Block.Id GetBlock(int x, int y, int z) =>
+        IsBlockInBounds(x, y, z) ? blocks[(x, y, z).To1D(Size)] : Block.Id.Air;
+    
+    public void SetBlock(Block.Id blockId, Vector3Int pos) => SetBlock(blockId, pos.x, pos.y, pos.z);
     
     public void SetBlock(Block.Id blockId, int x, int y, int z)
     {
         if (!IsBlockInBounds(x, y, z)) return;
 
-        blocks[GetBlockArrayIndex(x, y, z)] = blockId;
+        blocks[(x, y, z).To1D(Size)] = blockId;
+        IsDirty = true;
     }
 
-    private static bool IsBlockInBounds(int x, int y, int z)
-    {
-        return x is >= 0 and < Size &&
-               y is >= 0 and < Size &&
-               z is >= 0 and < Size;
-    }
+    public void MarkDirty() => IsDirty = true;
 
-    private static int GetBlockArrayIndex(int x, int y, int z)
-    {
-        return x + y * Size + z * Size * Size;
-    }
-
-    private static (int, int, int) GetBlockArrayCoords(int i)
-    {
-        int x = i % Size;
-        int y = i / Size % Size;
-        int z = i / (Size * Size);
-
-        return (x, y, z);
-    }
+    private static bool IsBlockInBounds(int x, int y, int z) => x is >= 0 and < Size &&
+                                                                y is >= 0 and < Size &&
+                                                                z is >= 0 and < Size;
 
     private void GenFaceIfNecessary(Block.Id blockId, int x, int y, int z, Direction.Axis direction)
     {
         Vector3 offset = Direction.AxisToVec(direction);
+        Vector3Int pos = new(x, y, z);
         
-        if (world.GetBlock(
-                x + (int)offset.x + chunkPosition.x * Size,
-                y + (int)offset.y + chunkPosition.y * Size,
-                z + (int)offset.z + chunkPosition.z * Size) != Block.Id.Air)
-            return;
-        
-        GenFace(blockId, x, y, z, direction);
+        if (world.GetBlock(pos + Vector3Int.RoundToInt(offset) + chunkPosition * Size) == Block.Id.Air)
+            GenFace(blockId, x, y, z, direction);
     }
 
     private void GenFace(Block.Id blockId, int x, int y, int z, Direction.Axis direction)

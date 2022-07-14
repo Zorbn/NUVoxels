@@ -5,8 +5,6 @@ public class Player : MonoBehaviour
 {
     public const float Reach = 10;
     
-    public GameObject marker;
-    public GameObject marker2;
     public World world;
     public Camera cam;
     public float lookSpeed = 3;
@@ -37,20 +35,20 @@ public class Player : MonoBehaviour
         if (leftClick || rightClick)
         {
             (Block.Id blockId, Vector3Int blockPos, Vector3Int hitNormal) = 
-                VoxelRay.Cast(world, camTransform.position, camTransform.forward, 10);
+                VoxelRay.Cast(world, camTransform.position, camTransform.forward, Reach);
 
             if (leftClick && blockId != Block.Id.Air)
             {
-                world.SetBlock(Block.Id.Air, blockPos.x, blockPos.y, blockPos.z);
+                world.SetBlock(Block.Id.Air, blockPos);
             }
             else if (rightClick)
             {
                 Vector3Int placePos = blockPos + hitNormal;
-                Block.Id placePosBlockId = world.GetBlock(placePos.x, placePos.y, placePos.z);
+                Block.Id placePosBlockId = world.GetBlock(placePos);
 
                 if (placePosBlockId == Block.Id.Air)
                 {
-                    world.SetBlock(Block.Id.Grass, placePos.x, placePos.y, placePos.z);
+                    world.SetBlock(Block.Id.Grass, placePos);
                 }
             }
         }
