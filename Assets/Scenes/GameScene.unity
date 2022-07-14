@@ -657,7 +657,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1069300415}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 10, y: 150, z: 10}
+  m_LocalPosition: {x: 9.5, y: 150, z: 9.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -677,8 +677,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8524456fa9b273349b7a361f0d4a4dc1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  marker: {fileID: 5476955966959762015, guid: 95633fdabceccaf40bccce6da1daf97d, type: 3}
-  marker2: {fileID: 5476955966959762015, guid: 007cbcf8ed0050045b0c5ade33fa0399, type: 3}
   world: {fileID: 424300197}
   cam: {fileID: 634051992}
   lookSpeed: 3

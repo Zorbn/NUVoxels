@@ -5,13 +5,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 
-// TODO: Prevent placing blocks if the location is occupied (check pos using unity physics)
-
 public class World : MonoBehaviour
 {
     private const int WidthInChunks = 12;
     private const int HeightInChunks = 8;
     private const float GroundLevel = Chunk.Size * HeightInChunks * 0.5f;
+    private static readonly Vector3 HalfBlockPhysicalExtents = new(0.49f, 0.49f, 0.49f);
     
     [SerializeField] private GameObject chunkPrefab;
 
@@ -81,6 +80,12 @@ public class World : MonoBehaviour
         }
     }
 
+    public bool IsBlockPhysicallyOccupied(Vector3Int blockPos)
+    {
+        Vector3 checkPos = blockPos + new Vector3(0.5f, 0.5f, 0.5f);
+        return GetBlock(blockPos) != Block.Id.Air || Physics.CheckBox(checkPos, HalfBlockPhysicalExtents);
+    }
+    
     public Block.Id GetBlock(Vector3Int pos) => GetBlock(pos.x, pos.y, pos.z);
     
     public Block.Id GetBlock(int x, int y, int z)

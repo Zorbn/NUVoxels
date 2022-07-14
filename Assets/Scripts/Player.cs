@@ -4,7 +4,7 @@ using UnityEngine;
 public class Player : MonoBehaviour
 {
     public const float Reach = 10;
-    
+
     public World world;
     public Camera cam;
     public float lookSpeed = 3;
@@ -28,29 +28,30 @@ public class Player : MonoBehaviour
     {
         Look();
         Move();
+        Interact();
+    }
 
+    private void Interact()
+    {
         bool leftClick = Input.GetButtonDown("Fire1"); // Break block
         bool rightClick = Input.GetButtonDown("Fire2"); // Place block
 
-        if (leftClick || rightClick)
+        if (!leftClick && !rightClick) return;
+        
+        (Block.Id blockId, Vector3Int blockPos, Vector3Int hitNormal) =
+            VoxelRay.Cast(world, camTransform.position, camTransform.forward, Reach);
+
+        if (blockId == Block.Id.Air) return;
+
+        if (leftClick)
         {
-            (Block.Id blockId, Vector3Int blockPos, Vector3Int hitNormal) = 
-                VoxelRay.Cast(world, camTransform.position, camTransform.forward, Reach);
+            world.SetBlock(Block.Id.Air, blockPos);
+        }
+        else
+        {
+            Vector3Int placePos = blockPos + hitNormal;
 
-            if (leftClick && blockId != Block.Id.Air)
-            {
-                world.SetBlock(Block.Id.Air, blockPos);
-            }
-            else if (rightClick)
-            {
-                Vector3Int placePos = blockPos + hitNormal;
-                Block.Id placePosBlockId = world.GetBlock(placePos);
-
-                if (placePosBlockId == Block.Id.Air)
-                {
-                    world.SetBlock(Block.Id.Grass, placePos);
-                }
-            }
+            if (!world.IsBlockPhysicallyOccupied(placePos)) world.SetBlock(Block.Id.Grass, placePos);
         }
     }
 
